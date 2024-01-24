@@ -1,8 +1,8 @@
 #pragma once
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// #ifdef __cplusplus
+// extern "C" {
+// #endif
 
 enum SaveType 
 {
@@ -51,13 +51,13 @@ struct save_type_t
 	u16      tagLength;
 	u16 type;
 	u32      size;
-	bool (*  patchFunc)(const struct save_type_t* type);
+	bool (*  patchFunc)(const save_type_t* type);
 };
 
 extern u32 romSize;
-const struct save_type_t* save_findTag();
+const save_type_t* save_findTag();
 
 void twoByteCpy(u16 *dst, const u16 *src, u32 size);
-#ifdef __cplusplus
-}
-#endif
+// #ifdef __cplusplus
+// }
+// #endif

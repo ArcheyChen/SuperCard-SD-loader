@@ -7,8 +7,8 @@
 #include "Save.h"
 #include "EepromSave.h"
 #include "FlashSave.h"
-
-u32 romSize;
+#include "WhiteScreenPatch.h"
+// u32 gbaRomSize = 66;
 
 bool savingAllowed = true;//有某个游戏是不能开启存档的，否则出错
 // Values for changing mode
@@ -45,21 +45,12 @@ void waitForever() {
 	while (1)
 		VBlankIntrWait();
 }
-#define BUF_LEN 0x20000
-EWRAM_DATA u8 copyBuf[BUF_LEN];
+#define BUF_LEN 0x10000
+EWRAM_BSS u8 copyBuf[BUF_LEN];
 //---------------------------------------------------------------------------------
 // Program entry point
 //---------------------------------------------------------------------------------
-u32 prefetchPatch[8] = {
-	0xE59F000C,	// LDR  R0, =0x4000204
-	0xE59F100C, // LDR  R1, =0x4000
-	0xE4A01000, // STRT R1, [R0]
-	0xE59F0008, // LDR  R0, =0x80000C0 (this changes, depending on the ROM)
-	0xE1A0F000, // MOV  PC, R0
-	0x04000204,
-	0x00004000,
-	0x080000C0
-};
+
 #define AGB_ROM ((vu32 *)0x8000000)
 #define AGB_PRAM (volatile void *)0x5000000
 #define AGB_VRAM (volatile void *)0x6000000
@@ -93,19 +84,20 @@ int main(void) {
 	}
 
 
-	char rom_name[] = "sram-zelda-origin.gba";
+	char rom_name[] = "run.gba";
 	FILE *gba_rom = fopen(rom_name,"rb");
 	if(gba_rom){
-		printf("Open OK:%s\n",rom_name);
+		printf("Opened:%s\n",rom_name);
 	}else{
 		printf("GBA open failed:%s\n",rom_name);
 		waitForever();
 	}
     fseek(gba_rom, 0, SEEK_END);
-    romSize = ftell(gba_rom);
+    int gbaRomSize = ftell(gba_rom);
+	romSize = gbaRomSize;
     fseek(gba_rom, 0, SEEK_SET);
 
-    printf("The size of the file is:\n %d bytes\n", romSize);
+    printf("The size of the file is:\n %u bytes\n", gbaRomSize);
 	
 
     // 拷贝过程
@@ -127,53 +119,22 @@ int main(void) {
 	
 	_SC_changeMode(SC_MODE_RAM);
 	
-    printf("File copied successfully.\n Now Patching");
-	u32 entryPoint = *(u32*)0x08000000;
-	entryPoint -= 0xEA000000;
-	entryPoint += 2;
-	prefetchPatch[7] = 0x08000000+(entryPoint*4);
+    printf("File copied successfully.\n Now Patching\n");
 
-	u32 patchOffset = 0x01FFFFDC;
-
-	{
-		vu32 *patchAddr = (vu32*)(0x08000000+patchOffset);
-		for(int i=0;i<8;i++){
-			patchAddr[i] = prefetchPatch[i];
-		}
-	}
-
-	u32 branchCode = 0xEA000000+(patchOffset/sizeof(u32))-2;
-	*(vu32*)0x08000000 = branchCode;
-
-	u32 searchRange = 0x08000000+romSize;
-	if (romSize > 0x01FFFFDC) searchRange = 0x09FFFFDC;
-
-	// General fix for white screen crash
-	// Patch out wait states
-	for (u32 addr = 0x080000C0; addr < searchRange; addr+=4) {
-		if (*(u32*)addr == 0x04000204 &&
-		  (*(u8*)(addr-1) == 0x00 || *(u8*)(addr-1) == 0x03 || *(u8*)(addr-1) == 0x04 || *(u8*)(addr+7) == 0x04
-		  || *(u8*)(addr-1) == 0x08 || *(u8*)(addr-1) == 0x09
-		  || *(u8*)(addr-1) == 0x47 || *(u8*)(addr-1) == 0x81 || *(u8*)(addr-1) == 0x85
-		  || *(u8*)(addr-1) == 0xE0 || *(u8*)(addr-1) == 0xE7 || *(u16*)(addr-2) == 0xFFFE)) 
-		{
-			*(vu32*)addr = 0;
-		}
-	}
-
-	// Also check at 0x410
-	if (*(u32*)0x08000410 == 0x04000204) {
-		*(vu32*)0x08000410 = 0;
-	}
-	printf("White Screen patch done!\n");
+	patchGeneralWhiteScreen();
+	patchSpecificGame();
+	
+	printf("White Screen patch done!\nNow patching Save\n");
 	
 	///开始给存档打补丁
-
 	
-	const struct save_type_t* saveType = savingAllowed ? save_findTag() : NULL;
+	const save_type_t* saveType = savingAllowed ? save_findTag() : NULL;
 	if (saveType != NULL && saveType->patchFunc != NULL){
-		bool err = saveType->patchFunc(saveType);
-		printf("Save Type Patch Error\n");
+		bool done = saveType->patchFunc(saveType);
+		if(!done)
+			printf("Save Type Patch Error\n");
+	}else{
+		printf("No need to patch\n");
 	}
 	
 	_SC_changeMode(SC_MODE_RAM_RO);

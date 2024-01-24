@@ -4,7 +4,7 @@
 #include "Save.h"
 #include "string.h"
 
-extern u32 romSize;
+u32 romSize;
 
 #define SAVE_TYPE_COUNT		25
 
