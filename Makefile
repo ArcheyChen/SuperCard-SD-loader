@@ -27,13 +27,14 @@ INCLUDES	:=
 #---------------------------------------------------------------------------------
 ARCH	:=	-v -mthumb -mthumb-interwork
 
-CFLAGS	:=	-g -Wall -O3\
+CFLAGS	:=	-g -Wall -O2\
 		-mcpu=arm7tdmi -mtune=arm7tdmi\
 		$(ARCH)
 
 CFLAGS	+=	$(INCLUDE)
+CFLAGS	+=	-std=c99
 
-CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions
+CXXFLAGS	:=	$(CFLAGS) -fno-rtti -fno-exceptions -std=c++11
 
 ASFLAGS	:=	$(ARCH)
 LDFLAGS	=	-g $(ARCH) -Wl,-Map,$(notdir $@).map

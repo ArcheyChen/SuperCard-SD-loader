@@ -8,6 +8,7 @@
 #include "EepromSave.h"
 #include "FlashSave.h"
 #include "WhiteScreenPatch.h"
+#include "my_io_scsd.h"
 // u32 gbaRomSize = 66;
 
 bool savingAllowed = true;//有某个游戏是不能开启存档的，否则出错
@@ -51,7 +52,7 @@ EWRAM_BSS u8 copyBuf[BUF_LEN];
 // Program entry point
 //---------------------------------------------------------------------------------
 
-#define AGB_ROM ((vu32 *)0x8000000)
+#define AGB_ROM ((u32 *)0x8000000)
 #define AGB_PRAM (volatile void *)0x5000000
 #define AGB_VRAM (volatile void *)0x6000000
 #define AGB_SRAM (volatile void *)0xE000000
@@ -73,10 +74,13 @@ int main(void) {
 	irqEnable(IRQ_VBLANK);
 
 	consoleDemoInit();
-
+	const DISC_INTERFACE *sc_inter = &_my_io_scsd ;
+	_my_io_scsd.startup();
+	_my_io_scsd.shutdown();
 	printf("Fat32 test\n\n");
-
-	if (fatInitDefault()) {
+	sc_inter->startup();
+	if (fatMountSimple("fat",sc_inter)) {
+	// if(fatInit (2, true)){
 		printf("FAT system initialised\n");
 	} else {
 		printf("FAT system failed!\n");
@@ -84,7 +88,7 @@ int main(void) {
 	}
 
 
-	char rom_name[] = "run.gba";
+	char rom_name[] = "fat:/run.gba";
 	FILE *gba_rom = fopen(rom_name,"rb");
 	if(gba_rom){
 		printf("Opened:%s\n",rom_name);
