@@ -41,7 +41,7 @@
 Improved CRC7 function provided by cory1492
 Calculates the CRC of an SD command, and includes the end bit in the byte
 */
-u8 _SD_CRC7(u8* data, int cnt) {
+u8 _SD_CRC7_my(u8* data, int cnt) {
     int i, a;
     u8 crc, temp;
 
@@ -65,7 +65,7 @@ Calculates the CRC16 for a sector of data. Calculates it
 as 4 separate lots, merged into one buffer. This is used
 for 4 SD data lines, not for 1 data line alone.
 */
-void _SD_CRC16 (u8* buff, int buffLength, u8* crc16buff) {
+void _SD_CRC16_my (u8* buff, int buffLength, u8* crc16buff) {
 	u32 a, b, c, d;
 	int count;
 	u32 bitPattern = 0x80808080;	// r7
@@ -134,119 +134,51 @@ use4bitBus: initialise card to use a 4 bit data bus when communicating with the 
 RCA: a pointer to the location to store the card's Relative Card Address, preshifted up by 16 bits.
 */
 
-bool _SD_InitCard_old (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response, 
+#define CMD8 8
+#define CMD58 58
+#define R1_ILLEGAL_COMMAND 0x04
+bool _SD_InitCard_SDHC (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response, 
 					_SD_FN_CMD_17BYTE_RESPONSE cmd_17byte_response,
 					bool use4bitBus,
-					u32 *RCA)
+					u32 *RCA,bool *isSDHC)
 {
 	u8 responseBuffer[17] = {0};
 	int i;
 	
-	for (i = 0; i < MAX_STARTUP_TRIES ; i++) {
-		cmd_6byte_response (responseBuffer, APP_CMD, 0);
-		// Check that the card gave the correct response
-		if (responseBuffer[0] != APP_CMD) {
-			return false;
-		}
-		if ( 
-			cmd_6byte_response (responseBuffer, SD_APP_OP_COND, SD_OCR_VALUE) &&
-			((responseBuffer[1] & 0x80) != 0))
-		{	
-			// Card is ready to receive commands now
-			break;
-		}
-	}
-	if (i >= MAX_STARTUP_TRIES) {
-		return false;
-	}
- 
-	// The card's name, as assigned by the manufacturer
-	cmd_17byte_response (responseBuffer, ALL_SEND_CID, 0);
- 
-	// Get a new address
-	for (i = 0; i < MAX_STARTUP_TRIES ; i++) {
-		cmd_6byte_response (responseBuffer, SEND_RELATIVE_ADDR, 0);
-		*RCA = (responseBuffer[1] << 24) | (responseBuffer[2] << 16);
-		if ((responseBuffer[3] & 0x1e) != (SD_STATE_STBY << 1)) {
-			break;
-		}
-	}
- 	if (i >= MAX_STARTUP_TRIES) {
-		return false;
-	}
-
-	// Some cards won't go to higher speeds unless they think you checked their capabilities
-	cmd_17byte_response (responseBuffer, SEND_CSD, *RCA);
- 
-	// Only this card should respond to all future commands
-	cmd_6byte_response (responseBuffer, SELECT_CARD, *RCA);
- 
-	if (use4bitBus) {
-		// Set a 4 bit data bus
-		cmd_6byte_response (responseBuffer, APP_CMD, *RCA);
-		cmd_6byte_response (responseBuffer, SET_BUS_WIDTH, 2); // 4-bit mode.
-	}
-
-	// Use 512 byte blocks
-	cmd_6byte_response (responseBuffer, SET_BLOCKLEN, 512); // 512 byte blocks
+    *isSDHC = false;
 	
-	// Wait until card is ready for data
-	i = 0;
-	do {
-		if (i >= RESPONSE_TIMEOUT) {
-			return false;
-		}
-		i++;
-	} while (!cmd_6byte_response (responseBuffer, SEND_STATUS, *RCA) && ((responseBuffer[3] & 0x1f) != ((SD_STATE_TRAN << 1) | READY_FOR_DATA)));
- 
-	return true;
-}
-
-
-
-bool _SD_InitCard (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response, 
-					_SD_FN_CMD_17BYTE_RESPONSE cmd_17byte_response,
-					bool use4bitBus,
-					u32 *RCA)
-{
-	u8 responseBuffer[17] = {0};
-	int i;
+	bool cmd8Response = cmd_17byte_response(responseBuffer, CMD8, 0x1AA);//0xa 是确定的 0xAA是推荐值
 	
-    bool isSDHC = false;
-	
-	bool cmd8Response = cmd_6byte_response(responseBuffer, CMD8, 0x1AA);
-	
-	printf("resp:\n");
-	for(int i=0;i<5;i++){
-		printf("[%d]=%X ",i,responseBuffer[i]);
-	}
-	printf("\n");
-    if (cmd8Response && responseBuffer[0] == CMD8 && (responseBuffer[1]&R1_ILLEGAL_COMMAND) == 0 && responseBuffer[3] == 0x1 && responseBuffer[4] == 0xAA) {
-        isSDHC = true;
-		printf("IS SDHC!!!\n");
+
+	iprintf("\n");
+	//CMD8 也就是  Send Interface Condition Command
+	//正确的回显是：CMD8，Ver=0,Reserved=0,EchoBack=1,EchoBack=0XAA
+    if (cmd8Response && responseBuffer[0] == CMD8 && responseBuffer[1] == 0 && responseBuffer[2] == 0 && responseBuffer[3] == 0x1 && responseBuffer[4] == 0xAA) {
+        *isSDHC = true;
+		iprintf("CMD8 Return OK,might be a SDHC\n");
     }else{
-		printf("resp:%d\n",cmd8Response);
-		printf("responseBuffer[0]=%X",responseBuffer[0]);//回显发送的数据
-		printf("responseBuffer[3]=%X",responseBuffer[3]);
-		printf("responseBuffer[4]=%X",responseBuffer[4]);
-
-		printf("NO SDHC\n");
+		iprintf("CMD8 ERR not SDHC\n");
+		iprintf("resp:");
+		for(int i=0;i<17;i++){
+			iprintf("[%d]=%X ",i,responseBuffer[i]);
+		}
 	}
 	for (i = 0; i < MAX_STARTUP_TRIES; i++) {
-		cmd_6byte_response(responseBuffer, APP_CMD, 0);
-		if (responseBuffer[0] != APP_CMD) {
-			printf("Failed to send APP_CMD\n");
+		cmd_6byte_response(responseBuffer, APP_CMD, 0);//CMD55
+		if (responseBuffer[0] != APP_CMD) {	
+			iprintf("Failed to send APP_CMD\n");	//进入到APP模式，可以执行ACMD41
 			return false;
 		}
 
 		u32 arg = SD_OCR_VALUE;
-		if (isSDHC) {
-			arg |= 0x40000000; // Set HCS bit
+		if (*isSDHC) {
+			arg |= (1<<30); // Set HCS bit,Supports SDHC
+			arg |= (1<<28); //Max performance
 		}
 
-		if (cmd_6byte_response(responseBuffer, SD_APP_OP_COND, arg) &&
-			((responseBuffer[1] & 0x80) != 0)) {
-			printf("ACMD41 accepted\n");
+		if (cmd_6byte_response(responseBuffer, SD_APP_OP_COND, arg) &&//ACMD41
+			((responseBuffer[1] & (1<<7)) != 0)/*Busy:0b:initing 1b:init completed*/) {
+			iprintf("ACMD41 accepted init completed\n");
 			break; // Card is ready
 		}
 	}
@@ -256,14 +188,14 @@ bool _SD_InitCard (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response,
 	}
 	if (isSDHC) {
 		cmd_6byte_response(responseBuffer, CMD58, 0);
-		printf("CMD58 response received\n");
-		u32 ocr = (responseBuffer[1] << 24) | (responseBuffer[2] << 16) |
-              (responseBuffer[3] << 8) | responseBuffer[4];
-		if ((ocr & 0x40000000) == 0) {
-			printf("CMD58 OCR ERROR!!\n\n");
-			// 这里可能需要处理错误，因为这表明卡不是SDHC
+		iprintf("CMD58 response received\n");
+		// u32 ocr = (responseBuffer[1] << 24) | (responseBuffer[2] << 16) |
+        //       (responseBuffer[3] << 8) | responseBuffer[4];
+		if ((responseBuffer[1] & (1<<6)) == 0) {//Card Capacity Status (CCS)
+			iprintf("CMD58 OCR ERROR!! Not SDHC\n\n");
+			*isSDHC = false;
 		}else{
-			printf("OCR OK!\n");
+			iprintf("OCR OK! Is SDHC\n");
 		}
 		// Further processing of OCR can be done here if needed
 	}
@@ -276,7 +208,7 @@ bool _SD_InitCard (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response,
 		cmd_6byte_response (responseBuffer, SEND_RELATIVE_ADDR, 0);
 		*RCA = (responseBuffer[1] << 24) | (responseBuffer[2] << 16);
 		if ((responseBuffer[3] & 0x1e) != (SD_STATE_STBY << 1)) {
-			printf("RCA set\n");
+			iprintf("RCA set\n");
 			break;
 		}
 	}

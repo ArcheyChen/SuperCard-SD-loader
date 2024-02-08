@@ -68,7 +68,7 @@
 //---------------------------------------------------------------
 // Variables required for tracking SD state
 u32 _SCSD_relativeCardAddress = 0;	// Preshifted Relative Card Address
-
+bool isSDHC;
 //---------------------------------------------------------------
 // Internal SC SD functions
 
@@ -212,10 +212,10 @@ bool _SCSD_initCard (void) {
 	_SCSD_relativeCardAddress = 0;
 
 	// Init the card
-	return _SD_InitCard (_SCSD_cmd_6byte_response_my, 
+	return _SD_InitCard_SDHC (_SCSD_cmd_6byte_response_my, 
 				_SCSD_cmd_17byte_response_my,
 				true,
-				&_SCSD_relativeCardAddress);
+				&_SCSD_relativeCardAddress,&isSDHC);
 }
 
 bool _SCSD_readData (void* buffer) {
@@ -260,108 +260,108 @@ bool _SCSD_readData (void* buffer) {
 // Functions needed for the external interface
 
 bool _SCSD_startUp_my (void) {
-    printf("Starting _SCSD_startUp_my...\n");
+    //printf("Starting _SCSD_startUp_my...\n");
     
     _SCSD_unlock();
-    printf("Unlocked in _SCSD_startUp_my.\n");
+    //printf("Unlocked in _SCSD_startUp_my.\n");
     
     bool initResult = _SCSD_initCard();
-    printf("Init card in _SCSD_startUp_my returned %d.\n", initResult);
+    //printf("Init card in _SCSD_startUp_my returned %d.\n", initResult);
     
     return initResult;
 }
 
 
 bool _SCSD_isInserted_my (void) {
-    printf("Starting _SCSD_isInserted_my...\n");
+    //printf("Starting _SCSD_isInserted_my...\n");
 
     u8 responseBuffer[6];
 
     if (!_SCSD_sendCommand(SEND_STATUS, 0)) {
-        printf("Failed to send command in _SCSD_isInserted_my.\n");
+        //printf("Failed to send command in _SCSD_isInserted_my.\n");
         return false;
     }
 
     if (!_SCSD_getResponse_R1(responseBuffer)) {
-        printf("Failed to get response in _SCSD_isInserted_my.\n");
+        //printf("Failed to get response in _SCSD_isInserted_my.\n");
         return false;
     }
 
     if (responseBuffer[0] != SEND_STATUS) {
-        printf("Incorrect response in _SCSD_isInserted_my: Expected %d, got %d\n", SEND_STATUS, responseBuffer[0]);
+        //printf("Incorrect response in _SCSD_isInserted_my: Expected %d, got %d\n", SEND_STATUS, responseBuffer[0]);
         return false;
     }
 
-    printf("Successful execution of _SCSD_isInserted_my.\n");
+    //printf("Successful execution of _SCSD_isInserted_my.\n");
     return true;
 }
 
 
 bool _SCSD_readSectors_my (u32 sector, u32 numSectors, void* buffer) {
-    printf("Starting _SCSD_readSectors_my with sector %u and numSectors %u.\n", sector, numSectors);
+    //printf("Starting _SCSD_readSectors_my with sector %u and numSectors %u.\n", sector, numSectors);
     
     u32 i;
 	u8* dest = (u8*) buffer;
 	u8 responseBuffer[6];
-
+	u32 argument = isSDHC ? sector : sector * BYTES_PER_READ;
     if (numSectors == 1) {
-        printf("Reading single sector.\n");
-        if (!_SCSD_sendCommand(READ_SINGLE_BLOCK, sector * BYTES_PER_READ)) {
-            printf("Failed to send READ_SINGLE_BLOCK command.\n");
+        //printf("Reading single sector.\n");
+        if (!_SCSD_sendCommand(READ_SINGLE_BLOCK, argument)) {
+            //printf("Failed to send READ_SINGLE_BLOCK command.\n");
             return false;
         }
 
         if (!_SCSD_readData(buffer)) {
-            printf("Failed to read data for single sector.\n");
+            //printf("Failed to read data for single sector.\n");
             return false;
         }
     } else {
-        printf("Reading multiple sectors.\n");
-        if (!_SCSD_sendCommand(READ_MULTIPLE_BLOCK, sector * BYTES_PER_READ)) {
-            printf("Failed to send READ_MULTIPLE_BLOCK command.\n");
+        //printf("Reading multiple sectors.\n");
+        if (!_SCSD_sendCommand(READ_MULTIPLE_BLOCK, argument)) {
+            //printf("Failed to send READ_MULTIPLE_BLOCK command.\n");
             return false;
         }
 
         for (i = 0; i < numSectors; i++, dest += BYTES_PER_READ) {
             if (!_SCSD_readData(dest)) {
-                printf("Failed to read data at sector %u.\n", i + sector);
+                //printf("Failed to read data at sector %u.\n", i + sector);
                 return false;
             }
         }
 
-        printf("Stopping transmission after multiple sectors.\n");
+        //printf("Stopping transmission after multiple sectors.\n");
         _SCSD_sendCommand(STOP_TRANSMISSION, 0);
         _SCSD_getResponse_R1b(responseBuffer);
     }
 
     _SCSD_sendClocks(64);
-    printf("Completed _SCSD_readSectors_my.\n");
+    //printf("Completed _SCSD_readSectors_my.\n");
     return true;
 }
 
 
 bool _SCSD_writeSectors_my (u32 sector, u32 numSectors, const void* buffer) {
-    printf("Starting _SCSD_writeSectors_my with sector %u and numSectors %u.\n", sector, numSectors);
+    //printf("Starting _SCSD_writeSectors_my with sector %u and numSectors %u.\n", sector, numSectors);
 
     u16 crc[4];
 	u8 responseBuffer[6];
-    u32 offset = sector * BYTES_PER_READ;
+    u32 offset = isSDHC ? sector : sector * BYTES_PER_READ;
     u8* data = (u8*) buffer;
     int i;
 
     while (numSectors--) {
-        printf("Writing sector at offset %u.\n", offset);
+        //printf("Writing sector at offset %u.\n", offset);
 
         _SD_CRC16(data, BYTES_PER_READ, (u8*)crc);
         
         _SCSD_sendCommand(WRITE_BLOCK, offset);
         if (!_SCSD_getResponse_R1(responseBuffer)) {
-            printf("Failed to get response after WRITE_BLOCK command.\n");
+            //printf("Failed to get response after WRITE_BLOCK command.\n");
             return false;
         }
 
         if (!_SCSD_writeData_s(data, crc)) {
-            printf("Failed to write data and CRC.\n");
+            //printf("Failed to write data and CRC.\n");
             return false;
         }
 
@@ -374,34 +374,34 @@ bool _SCSD_writeSectors_my (u32 sector, u32 numSectors, const void* buffer) {
         do {
             _SCSD_sendCommand(SEND_STATUS, _SCSD_relativeCardAddress);
             if (!_SCSD_getResponse_R1(responseBuffer) || i-- <= 0) {
-                printf("Timeout or error during write confirmation.\n");
+                //printf("Timeout or error during write confirmation.\n");
                 return false;
             }
         } while (((responseBuffer[3] & 0x1f) != ((SD_STATE_TRAN << 1) | READY_FOR_DATA)));
 
-        printf("Sector at offset %u written successfully.\n", offset - BYTES_PER_READ);
+        //printf("Sector at offset %u written successfully.\n", offset - BYTES_PER_READ);
     }
 
-    printf("Completed _SCSD_writeSectors_my.\n");
+    //printf("Completed _SCSD_writeSectors_my.\n");
     return true;
 }
 
 
 bool _SCSD_clearStatus_my (void) {
-    printf("Starting _SCSD_clearStatus_my...\n");
+    //printf("Starting _SCSD_clearStatus_my...\n");
     
     bool initResult = _SCSD_initCard();
-    printf("Initialization in _SCSD_clearStatus_my returned %d.\n", initResult);
+    //printf("Initialization in _SCSD_clearStatus_my returned %d.\n", initResult);
 
     return initResult;
 }
 
 
 bool _SCSD_shutdown_my (void) {
-    printf("Starting _SCSD_shutdown_my...\n");
+    //printf("Starting _SCSD_shutdown_my...\n");
 
     _SC_changeMode(SC_MODE_RAM_RO);
-    printf("Changed mode to SC_MODE_RAM_RO in _SCSD_shutdown_my.\n");
+    //printf("Changed mode to SC_MODE_RAM_RO in _SCSD_shutdown_my.\n");
 
     return true;
 }

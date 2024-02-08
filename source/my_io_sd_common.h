@@ -108,9 +108,9 @@ cmd_17byte_response: a pointer to a function that sends the SD card a command an
 use4bitBus: initialise card to use a 4 bit data bus when communicating with the card
 RCA: a pointer to the location to store the card's Relative Card Address, preshifted up by 16 bits.
 */
-extern bool _SD_InitCard (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response, 
-							_SD_FN_CMD_17BYTE_RESPONSE cmd_17byte_response,
-							bool use4bitBus,
-							u32 *RCA);
+extern bool _SD_InitCard_SDHC (_SD_FN_CMD_6BYTE_RESPONSE cmd_6byte_response, 
+					_SD_FN_CMD_17BYTE_RESPONSE cmd_17byte_response,
+					bool use4bitBus,
+					u32 *RCA,bool *isSDHC);
 
 #endif // define IO_SD_COMMON_H
